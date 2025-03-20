@@ -1,1 +1,6 @@
-# Final_Paper
+# Final Paper
+
+
+This work addresses the analysis of detection and precoding techniques applied to massive MIMO systems, considering different simulation scenarios. Initially, the fundamental concepts of this technology are presented. In the uplink, detection techniques such as Zero-Forcing (ZF), Minimum Mean Square Error (MMSE), ZF with Interference Cancellation (ZF-IC), MMSE with Interference Cancellation (MMSE-IC), and Lenstra-Lenstra-Lovász Lattice Reduction (LLL) are investigated. In the downlink, approaches such as ZF precoding and MMSE precoding are analyzed, as well as the Norm Descent Search (NDS) method applied to the NDS-ZF and NDS-MMSE precoders. Both uplink and downlink simulations were performed, analyzing the computational efforts and performance of each method.
+
+The simulations will be carried out considering different configurations of the number of antennas at the base station and users, allowing the evaluation of the Bit Error Rate (BER) and the impact of multi-user interference on the performance of the studied techniques. The objective is to verify how these strategies behave under different Signal-to-Noise Ratio (SNR) regimes and in scenarios with different numbers of receiving and transmitting antennas in massive MIMO. The comparison between methods will allow evaluating detection and transmission efficiency, contributing to the understanding of the limitations and advantages of each approach.
