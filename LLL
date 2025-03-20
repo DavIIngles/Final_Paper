@@ -1,0 +1,249 @@
+
+
+    clear all; 
+    close all; 
+    clc;
+
+
+    Nt = 64;                  % Ntumero de antenas de Transmissão
+    Nr = 64;                  % Ntumer o de antenas de Recepção
+    Loop = 1e4;
+    
+    modOrd = 1; % PBSK
+    numSym = Nt;
+    SNR_dB_valores = 0:2:30;
+    delta = 1;
+    
+   % Inicializa vetor de resultados para a BER
+    ber_valores = zeros(size(SNR_dB_valores));
+    
+    for snr_idx = 1:length(SNR_dB_valores)
+    
+        fprintf('SNR_dB = %d\n', SNR_dB_valores(snr_idx));
+
+        erros = 0;
+        for Loop_idx = 1:Loop
+        
+            
+       fprintf('SNR_dB = %d, loop_idx = %d\n', SNR_dB_valores(snr_idx), Loop_idx);
+    % Configurar o SNR atual
+    SNR_dB = SNR_dB_valores(snr_idx);
+    SNR_linear = 10^(SNR_dB / 10);
+        
+    % MSG
+    msg = randi([0 1], numSym, modOrd); % Gera uma mensagem aleatória com valores binários (0 ou 1) que será modulada e transmitida. A mensagem tem o tamanho de modOrd (1 no caso do BPSK) vezes numym (25 no caso atual).
+		% Sequencia binária 
+        
+    % Modulação da Msg
+    Msg_Modulada = real(pskmod(msg,2^modOrd)); % Nrodula a mensagem gerada anteriormente usando modulação PSK (Phase Shift Keying) e armazena os símbolos resultantes em source.
+       
+    %Tx = reshape(source, Nt, numel(source)/Nt);  %  Divide os símbolos de origem (source) entre as Nt antenas de transmissão, de forma que cada antena transmita um subconjunto dos símbolos. Isso simula a transmissão espacial multiplexada. A função reshape é usada para organizar os símbolos em uma matriz Tx. A variável source é limpa para economizar memória.
+        
+    % matriz H
+    H_complexo = (randn(Nr, Nt) +  1i*randn(Nr, Nt))/sqrt(2); %  Gera uma matriz de fading Rayleigh complexa, simulando os efeitos do canal sem fio. A matriz é preenchida com números complexos aleatórios com distribuição gaussiana (parte real e imaginária) e normalizada para ter uma potência média de 1/sqrt(2).
+        
+    % Ruido
+    % Calcular a variância do ruído
+    sigma2 = 1 / SNR_linear;
+    
+    w = (randn(Nr, 1) +  1i*randn(Nr, 1))/sqrt(2*SNR_linear)*sqrt(Nt); % Gera um vetor de ruído complexo que representa o ruído do canal. O ruído é adicionado ao sinal transmitido para simular o ambiente de comunicação. O ruído é escalado de acordo com o valor de SNtR calculado anteriorment
+    
+    % Converter SNR de dB para linear
+ 
+    
+    y = H_complexo*Msg_Modulada + w;
+    
+    
+    X_estimate_1 = LRAD_MMSE(H_complexo,y,sigma2,delta,Nt,Nr);
+    
+    % Transformar X_estimate_1 em vetor coluna
+    X_estimate_1_coluna = X_estimate_1(:);
+
+    % Demodulação BPSK no vetor estimado
+    % Se o valor for >= 0, ele representa o bit '0'; caso contrário, o bit '1'.
+    bits_estimados = double(X_estimate_1_coluna < 0);
+
+
+
+% Comparar os bits e contar os erros
+erros = sum(msg ~= bits_estimados) + erros;  % Contar o número de bits com erro
+
+% Calcular a BER
+BER = erros / (numSym*Loop) ;
+
+ber_valores(snr_idx) = BER;
+
+end
+ 
+end
+    % Exibir resultados finais
+    disp('Resultados finais de BER para cada SNR:');
+    figure;
+    semilogy(SNR_dB_valores, ber_valores, '-o');
+    xlabel('SNR (dB)');
+    ylabel('BER');
+    title('Curva BER x SNR');
+    grid on;
+
+    
+       %% CODIGO LIVRO 11.15
+function [X_estimate] = LRAD_MMSE(H_complex,y,sigma2,delta,Nt,Nr)
+
+% Detector assistido por redução de reticulado com MMSE
+
+% Entrada
+% H_complex : Matriz de canal complexa, NRxNT
+% y         : Sinal recebido complexo, NRx1
+% sigma2    : Variância do ruído
+% delta     : Variável de escalonamento
+
+% Saída
+% X_estimate : Sinal estimado, NTx1
+
+
+N = 2 * Nt;
+
+% Conversão da matriz de canal complexa para real
+H_real = [[real(H_complex), -imag(H_complex)];
+          [imag(H_complex), real(H_complex)]];
+H = [H_real; sqrt(sigma2) * eye(N)];
+
+% Converter o vetor complexo y para real
+y_real = [real(y); imag(y)];
+y = [y_real; zeros(N, 1)];
+
+% Decomposição QR ordenada
+[Q, R, P, p] = SQRD(H);
+
+% Redução de reticulado usando o algoritmo LLL
+[W, L, T] = original_LLL(Q, R, N, delta);  % W*L = Q*R*T
+
+% Aplicar as transformações
+H_tilde = H * P * T;
+X_temp = inv(H_tilde' * H_tilde) * H_tilde' * y;
+
+% Quantização (slicing)
+X_temp = round(X_temp);
+
+% Reverter a transformação
+X_temp = P * T * X_temp;
+
+% Converter o vetor real x de volta para complexo
+    for i = 1:Nr % Antes Nt
+    X_estimate(i) = X_temp(i) + j * X_temp(i + Nt); % Antes X_temp(i + 4);
+    end
+end
+
+
+%% CODIGO LIVRO 11.16
+
+function [Q, R, T] = original_LLL(Q, R, m, delta)
+
+% Entrada
+% Q      : Matriz ortogonal, NRxNT
+% R      : Matriz R com um grande número de condição
+% m      : Tamanho da matriz de colunas H
+% delta  : Variável de escalonamento
+
+% Saída
+% Q      : Matriz ortogonal, NRxNT
+% R      : Matriz R com um pequeno número de condição
+% T      : Matriz unimodular
+
+P = eye(m); 
+T = P; 
+k = 2;
+
+while (k <= m)
+
+    for j = k-1:-1:1
+        mu = round(R(j, k) / R(j, j));
+
+        if mu ~= 0
+            R(1:j, k) = R(1:j, k) - mu * R(1:j, j); 
+            T(:, k) = T(:, k) - mu * T(:, j);
+        end
+    end
+
+    % Troca de colunas se necessário
+    if (delta * R(k-1, k-1)^2 > R(k, k)^2 + R(k-1, k)^2)
+        R(:, [k-1 k]) = R(:, [k k-1]); 
+        T(:, [k-1 k]) = T(:, [k k-1]);
+
+        % Calcular a matriz de rotação de Givens para zerar R(k, k-1)
+        alpha = R(k-1, k-1) / sqrt(R(k-1:k, k-1)' * R(k-1:k, k-1));
+        beta = R(k, k-1) / sqrt(R(k-1:k, k-1)' * R(k-1:k, k-1));
+        theta = [alpha beta; -beta alpha];
+
+        R(k-1:k, k-1:m) = theta * R(k-1:k, k-1:m);
+        Q(:, k-1:k) = Q(:, k-1:k) * theta';
+
+        k = max([k-1, 2]);
+
+    else
+        k = k + 1;
+    end
+
+ end
+end
+
+
+
+%% CODIGO LIVRO 11.17
+
+function [Q, R, P, p] = SQRD(H)
+
+% Decomposição QR ordenada
+
+% Entrada
+% H : Matriz de canal complexa, NRxNT
+
+% Saída
+% Q : Matriz ortogonal, NRxNT
+% R : Matriz triangular superior
+% P : Matriz de permutação
+% p : Informação da ordenação
+
+Nt = size(H, 2);         % Número de antenas de transmissão
+Nr = size(H, 1) - Nt;    % Número de antenas de recepção menos as colunas de H
+R = zeros(Nt);           % Inicializa a matriz R
+
+Q = H;                   % Inicializa Q com a matriz de entrada H
+p = 1:Nt;                % Vetor de índice para ordenação
+
+% Calcula as normas de cada coluna de Q
+for i = 1:Nt
+    normes(i) = Q(:, i)' * Q(:, i); 
+end
+
+% Realiza a ordenação e decomposição QR
+    for i = 1:Nt
+    [mini, k_i] = min(normes(i:Nt)); 
+    k_i = k_i + i - 1;
+
+    % Permuta as colunas de R, P e Q
+    R(:, [i k_i]) = R(:, [k_i i]);
+    p(:, [i k_i]) = p(:, [k_i i]);
+    normes(:, [i k_i]) = normes(:, [k_i i]);
+    Q(1:Nr + i - 1, [i k_i]) = Q(1:Nr + i - 1, [k_i i]);
+    
+    %  Wubben’s  algorithm:  does  not  lead  to
+    % a true QR decomposition of the extended MMSE channel matrix % Q(Nr+1:Nr+Nt,:) is not triangular but permuted triangular
+    
+    % Atualiza a matriz R
+    R(i, i) = sqrt(normes(i));
+    Q(:, i) = Q(:, i) / R(i, i);
+
+    for k = i + 1:Nt
+        R(i, k) = Q(:, i)' * Q(:, k);
+        Q(:, k) = Q(:, k) - R(i, k) * Q(:, i);
+    end
+    end
+    P=zeros(Nt);          
+    for  i=1:Nt          
+        P(p(i),i)=1;
+    end
+end
+
+%ber_valores 0.2665    0.2436    0.2192    0.1955    0.1739    0.1520
+%0.1331    0.1152    0.0969    0.0808    0.0651    0.0522    0.0401    0.0298    0.0204      0.0140
