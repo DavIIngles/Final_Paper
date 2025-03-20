@@ -1,0 +1,223 @@
+
+
+
+clear all %  Isso limpa todas as variáveis armazenadas na memória do MATLAB.
+close all %  Fecha todas as janelas de gráficos abertas no MATLAB.
+clc %Limpa a janela de comando do MATLAB.
+
+%Essas linhas definem o número de antenas de transmissão (N) e o número de antenas de recepção (M) em um sistema de comunicação espacial multiplexado.
+
+N = 5;                  % Numero de antenas de Transmissão
+M = 5;                  % Numer o de antenas de Recepção
+
+
+EbNoVec = [0: 2: 20];       % Eb/No in dBq %Vetor que contém valores de relação sinal-ruído em decibéis (dB) de 0 a 20 com incrementos de 2 dB.
+
+modOrd = 1;             % constellation size = 2^modOrd % Define a ordem da constelação usada para modular os dados. Neste caso, é uma constelação BPSK (Binary Phase Shift Keying).
+
+numSym = N;             % número de símbolos % Define o número de símbolos a serem transmitidos igual ao número de antenas de transmissão.
+
+% Obtenha todas as combinações de bits para o receptor ML
+
+bits = de2bi(0:2^(modOrd)-1, 'left-msb')'; %Gera todas as combinações de bits possíveis para um receptor de máxima verossimilhança (ML) com base no número de antenas de transmissão (N) e na ordem da constelação
+bitsP = de2bi(0:2^modOrd-1, 'left-msb')'; %Gera todas as combinações de bits possíveis para uma única antena de transmissão, que serão usadas posteriormente para detecção
+
+% Pré-alocar variáveis ​​para velocidade
+
+dist = zeros(length(bits), 1); %Inicializa uma matriz de zeros chamada dist com o mesmo comprimento que o número de combinações de bits geradas anteriormente.
+
+[BER_ZF, BER_ZFIC, BER_LMMSE, BER_lmmseIC] = deal(zeros(1, length(EbNoVec))); % Inicializa quatro matrizes (BER_ZF, BER_ZFIC, BER_LMMSE, BER_lmmseIC) com zeros para armazenar as taxas de erro de bit (BER) calculadas em diferentes valores de Eb/No.
+
+simbolosP = pskmod(bitsP,2^modOrd); % Modula as combinações de bits geradas anteriormente com modulação BPSK e armazena os símbolos resultantes em simbolosP 
+
+% Set up a figure for visualizing BER results
+h = gcf; grid on; hold on; % Configura a figura atual (gcf) com uma grade e ativa o modo "hold on", que permite adicionar várias curvas ao gráfico sem apagar as anteriores.
+set(gca,'yscale','log','xlim',[EbNoVec(1)-0.01, EbNoVec(end)],'ylim',[1e-4 1]); % Configura os eixos do gráfico para escala logarítmica no eixo y e define os limites dos eixos x e y.
+xlabel('SNR (dB)'); ylabel('BER'); set(h,'NumberTitle','off'); % : Define rótulos para os eixos x e y do gráfico.
+set(h, 'renderer', 'zbuffer'); set(h,'Name','Spatial Multiplexing'); % Desativa o título automático da figura. % Define o renderizador da figura como "zbuffer".  % Define o nome da figura como "Spatial Multiplexing".
+title(['MxN Uncoded BPSK System, N = ' num2str(N) ', M = ' num2str(M)]); % Define o título da figura.
+
+% Loop over selected EbNo points
+% A partir daqui, o código entra em um loop que será executado para diferentes valores de Eb/No (sinal-ruído).
+for idx = 1:length(EbNoVec) %  Inicia um loop que percorre os valores de Eb/No no vetor EbNoVec.
+    clc; qq(idx) = EbNoVec(idx) %  Limpa a janela de comando e armazena o valor de Eb/No atual em qq(idx).
+    %Zera os contadores de erro
+    nErrs_zf = 0; nErrs_zfIC = 0; nErrs_LMMSE = 0; nErrs_lmmseIC = 0; % nicializa contadores de erros para quatro diferentes técnicas de detecção (Zero Forcing, Zero Forcing com Interferência Cancelada, LMMSE e LMMSE com Interferência Cancelada) a zero.
+    nBits = 0; %  Inicializa um contador de bits transmitidos a zero.
+    
+    % Calculate SNR absolute from EbNo
+    snr = 10^(EbNoVec(idx)/10); % Calcula a relação sinal-ruído (SNR) em escala linear a partir do valor de Eb/No atual.
+    
+    while ((nErrs_zf < max(20, 5000 - snr^1)) || (nErrs_zfIC < max(20, 5000 - snr^1)) || (nErrs_LMMSE < max(20, 5000 - snr^1)) || (nErrs_lmmseIC < max(20, 5000 - snr^1))) && (nBits < 1e7)
+    % Seu código de simulação aqui
+
+    % O código entra em um loop while que continuará até que pelo menos 100 erros de bit tenham ocorrido em cada uma das quatro técnicas de detecção ou até que 1 milhão de bits tenham sido transmitidos. Esse loop é usado para simular a transmissão e detecção de bits em um canal de comunicação.
+            
+        % Create array of bits to modulate
+        msg = randi([0 1], modOrd, numSym); % Gera uma mensagem aleatória com valores binários (0 ou 1) que será modulada e transmitida. A mensagem tem o tamanho de modOrd (1 no caso do BPSK) vezes numSym (25 no caso atual).
+        % Sequencia binária 
+        
+        % Modulate data
+        source = real(pskmod(msg,2^modOrd)); % Modula a mensagem gerada anteriormente usando modulação PSK (Phase Shift Keying) e armazena os símbolos resultantes em source.
+        
+        % Split source among N transmitters (symbol-wise)
+        Tx = reshape(source, N, numel(source)/N); clear source; %  Divide os símbolos de origem (source) entre as N antenas de transmissão, de forma que cada antena transmita um subconjunto dos símbolos. Isso simula a transmissão espacial multiplexada. A função reshape é usada para organizar os símbolos em uma matriz Tx. A variável source é limpa para economizar memória.
+        
+        % Flat Rayleigh Fading  - independent links
+        RayleighMat = (randn(M, N) +  1i*randn(M, N))/sqrt(2); %  Gera uma matriz de fading Rayleigh complexa, simulando os efeitos do canal sem fio. A matriz é preenchida com números complexos aleatórios com distribuição gaussiana (parte real e imaginária) e normalizada para ter uma potência média de 1/sqrt(2).
+        
+        %Noise
+        w = (randn(M, 1) +  1i*randn(M, 1))/sqrt(2*snr)*sqrt(N); % Gera um vetor de ruído complexo que representa o ruído do canal. O ruído é adicionado ao sinal transmitido para simular o ambiente de comunicação. O ruído é escalado de acordo com o valor de SNR calculado anteriormente.
+        
+        %%%%%%%%%% Importante 
+        
+        
+        
+        % Add channel noise power to faded data
+        r = RayleighMat*Tx + w; clear Tx; % Calcula o sinal recebido r somando o sinal transmitido após o fading do canal e o ruído do canal. A variável Tx é limpa para economizar memória.
+        r_store = r; 
+        
+        % Assume perfect channel estimation
+        H = RayleighMat; % : Assume que o receptor possui uma estimativa perfeita do canal, por isso, H é definido como igual à matriz RayleighMat.
+        
+        % Zero-Forcing receiver
+        E_zf = zeros(modOrd, numSym); % : Inicializa uma matriz E_zf para armazenar os bits recuperados usando a técnica de detecção Zero Forcing (ZF).
+        %   Initialization
+        G = pinv(H); % : Calcula a matriz de ganho G usando a pseudo-inversa da matriz de canal H. Isso é usado na detecção ZF.
+        
+        %%%%%%%%% ZF Detector %%%%%%%%%%%%%%
+        y = G*r; 
+        % O ZF é um algoritmo de detecção que busca eliminar a interferência entre os símbolos transmitidos pelas diferentes antenas de transmissão. 
+        % Ele calcula uma matriz de ganho G que é usada para multiplicar o sinal recebido r, a fim de estimar os símbolos transmitidos E_zf. 
+        % O loop for calcula a estimativa de cada símbolo transmitido.
+        
+        
+        
+        
+        %%%%%%%%%% ML detection %%%%%%%%%
+        kk = size(simbolosP,2);
+        for n = 1:N
+            for a = 1:kk
+                ML(a) = abs(y(n)-simbolosP(a))^2;
+            end
+            [NaoUsado, SimDet] = min(ML);
+            E_zf(:,n) = bitsP(:,SimDet); %Recovered signal with ZF detector
+        end     
+        
+        
+        %%%%%%%%% ZF-IC Detector %%%%%%%%%%%%%%
+        [Q, R] = qr(H);
+        
+        Rtil = Q'*r;
+        
+        %Estimativa da última antena de transmissão N
+        Rchapeu_N = Rtil(N)/R(N,N);
+        
+        for bb = 1:kk
+            arg(bb) = abs(Rchapeu_N - simbolosP(bb))^2;
+        end
+        [SimbN,argN(N)] = min(arg);
+        E_zfIC(:,N) = bitsP(:,argN(N)); %Recovered signal with ZF-IC detector
+        ii = N-1;
+        while ii >= 1
+            interf = 0;
+            for cc = ii+1:N
+                interf = interf + R(ii,cc)*simbolosP(argN(cc));%SimbN(cc)
+            end
+            R_tiltil = Rtil(ii) - interf;
+            
+            Rchapeu_N = R_tiltil/R(ii,ii);
+            for dd = 1:kk
+                argN_1(dd) = abs(Rchapeu_N - simbolosP(dd))^2;
+            end
+            
+            [SimbN_2,argN_2] = min(argN_1);
+            E_zfIC(:,ii) = bitsP(:,argN_2);
+            argN(ii) = argN_2;
+            %SimbN(ii) = SimbN_2;
+            ii = ii-1;
+        end
+        
+        %%%%%%%%% Detecção LMMSE %%%%%%%%%%%%%%
+        
+        W0 = (H'/N)/((snr/N)*(H)*H'+eye(M));
+        
+        R_lmmse = W0*r;
+        
+        jj=1;
+        while jj<=N
+            WH = 0;
+            for mm = 1:M
+                WH = WH + W0(jj,mm)*H(mm,jj);
+            end
+            R_antchap(jj) = R_lmmse(jj)/WH;
+            for ee = 1:kk
+                argN_3(ee) = abs(R_antchap(jj) - simbolosP(ee))^2;
+            end
+            [SimbN_4,argN_4] = min(argN_3);
+            E_LMMSE(:,jj) = bitsP(:,argN_4);%Recovered signal with LMMSE detector
+            jj = jj+1;
+        end
+        
+        %%%%%%%%% LMMSE-IC Detector %%%%%%%%%%%%%%
+        ff = N;
+        RN = r;
+        W1 = W0;
+        H1 = H;
+        while ff >= 1
+            R_lmmseIC = W1*RN;
+            WH1 = 0;
+            for mmm = 1:M
+                WH1 = WH1 + W1(ff,mmm)*H1(mmm,ff);
+            end
+            R_antchapIC(ff) = R_lmmseIC(ff)/WH1;
+            for gg = 1:kk
+                argN_5(gg) = abs(R_antchapIC(ff) - simbolosP(gg))^2;
+            end
+            [SimbN_6,argN_6] = min(argN_5);
+            E_lmmseIC(:,ff) = bitsP(:,argN_6); %Recovered signal with LMMSE-IC detector
+            P = H1(:,ff)*simbolosP(argN_6);%SimbN_6
+            RN = RN - P;
+            %H1 = H;
+            H1(:,ff) = [];
+            W1 = (H1'/N)/((snr/N)*(H1)*H1'+eye(M));
+            ff = ff - 1;
+        end
+        
+      
+        % Coletando erros ZF
+        nErrs_zf = nErrs_zf + biterr(msg, E_zf);
+        % Coletando erros ZF-IC
+        nErrs_zfIC = nErrs_zfIC + biterr(msg, E_zfIC);
+        % Coletando erros LMMSE
+        nErrs_LMMSE = nErrs_LMMSE + biterr(msg, E_LMMSE);
+        % Coletando erros LMMSE-IC
+        nErrs_lmmseIC = nErrs_lmmseIC + biterr(msg, E_lmmseIC);
+        % Ajustando o numero de bits total
+        nBits = nBits + length(msg(:));
+    end
+    
+    % Calculate BER for current point (Erros / Numero totais de Bits)
+    BER_ZF(idx) = nErrs_zf./nBits 
+    BER_ZFIC(idx) = nErrs_zfIC./nBits;
+    BER_LMMSE(idx) = nErrs_LMMSE./nBits;
+    BER_lmmseIC(idx) = nErrs_lmmseIC./nBits;
+    
+    % Plot results
+    semilogy(EbNoVec(1:idx), BER_ZF(1:idx), 'r*', ...
+        EbNoVec(1:idx), BER_ZFIC(1:idx), 'bo', ...
+        EbNoVec(1:idx), BER_LMMSE(1:idx), 'gs',...
+        EbNoVec(1:idx), BER_lmmseIC(1:idx), 'kv');
+    %legend({'	},'NumColumns',3);
+    drawnow;
+end
+
+% Draw the lines
+semilogy(EbNoVec, BER_ZF, 'r-', EbNoVec, BER_ZFIC, 'b-', ...
+    EbNoVec, BER_LMMSE, 'g-', EbNoVec, BER_lmmseIC, 'k-');
+legend({'ZF', 'ZF-SIC', 'MMSE', 'MMSE-SIC'},'NumColumns',3);
+hold off;
+
+
+% Em todos os casos, os bits estimados são comparados com os bits de mensagem original (bitsP) para calcular a taxa de erro de bit (BER) e contabilizar os erros. 
+% As BERs são então calculadas para cada técnica e em diferentes valores de Eb/No (relação energia por bit sobre ruído) para avaliar o desempenho dessas técnicas de detecção em um cenário de comunicação sem fio.
