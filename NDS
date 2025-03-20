@@ -1,0 +1,313 @@
+clear all 
+close all 
+clc 
+
+%% Geração de parametros do sistema
+
+% Parâmetros
+nt = 64; % Número de antenas transmissoras
+nusers = 40; % numero de usuarios
+nr = 1;  % Número de antenas receptoras
+
+
+% Loop para diferentes SNRs
+snr_values = 0:2:20; %0:2:20
+ber_values = zeros(size(snr_values));
+
+modOrd = 4;         % Ordem da modulação QAM (QAM-4)
+bits_per_symbol = log2(modOrd); % Número de bits por símbolo (2 bits para QAM-4)
+Limite_Interacaoes =  1e3;% Lim interações
+
+% Gerando os dados binários a serem transmitidos (x)
+num_bits = nusers * bits_per_symbol; % Total de bits necessários
+
+% Conjunto de símbolos QAM-4 
+S = [1 + 1j, 1 - 1j, -1 + 1j, -1 - 1j]; % Símbolos QAM-4 modulo ao quadrado potencia / precisa ter raiz de dois
+%fazer o S ( contagem de 0 até M-1)
+% ELEVA AO QUADRADO SOMA E DIVIDE PELO TOTAL
+
+
+for snr_idx = 1:length(snr_values)
+   
+
+
+ %% Geração de Dados
+ snr = 10^(snr_values(snr_idx)/10); % PASSAR ISSO PARA FORA DO LOOP
+ num_errors =0;
+ Msg = randi([0 1],nusers, bits_per_symbol);
+ MsgDecimal = bi2de(Msg, 'left-msb');
+ MsgModulada = qammod(MsgDecimal,modOrd) / sqrt(2); % AUTOMATIZAR A NORMALIZAÇÃO 
+
+
+U_Real = real(MsgModulada);
+U_Imaginaria = imag(MsgModulada);
+
+
+
+u_inicial = [U_Real; U_Imaginaria]; % Vetor u com a parte real e imaginária
+
+
+ %Canal Hc (nusers x nt)
+Hc = (randn(nusers, nt) + 1j * randn(nusers, nt)) / sqrt(2); % Canal complexo normalizado
+
+%  real e imaginário
+H_Real = real(Hc); % Parte real
+H_Imaginario = imag(Hc); % Parte imaginária
+
+%Matriz H 2xnusers x 2xnt
+H = [H_Real, -H_Imaginario; 
+     H_Imaginario,  H_Real];
+
+% Calcula H * H^T   %Dim 2xNusers x 2xNusers
+HHT = H * H.';
+
+% Calcula a inversa de H * H^T      %Dim 2xNusers x 2xNusers
+HHT_inv = inv(HHT);
+
+% Calcula G     %Dim 2xNt x 2xNusers
+G = H.' * HHT_inv;
+
+%G_MMSE = H' * inv(H * H' + 0,01 * nt * eye(nusers));
+
+%Ruido n        %Dim 2xNu
+
+w = ((randn(nusers, 1) + 1i * randn(nusers, 1)) / sqrt(2 * snr))*sqrt(nt);
+W_real = real(w);
+W_Imaginaria = imag(w);
+
+n =  [W_real; W_Imaginaria];
+
+%Matriz x       %Dim 2xNt
+
+Gu = G*u_inicial;
+norm_Gu = norm(Gu);
+x = Gu/norm_Gu ;
+
+%Matriz Y      %Dim 2xNu
+
+Y_inicial = H*x + n; % Y_inicial = u_inicial/norm_Gu + n;
+
+
+%% PRE-CODIFICAÇÃO NO TRANSMISSOR
+  
+   %%PASSO 1: S_MAX
+   norms = abs(S); %Calc a os modulos de cada valor
+   S_max = max(norms); % verifica o maior valor de S -> raiz(2) para QAM-4
+ 
+   %%PASSO 2: 
+    %A)U_0 
+    %B)COLOCAR K=0;
+    %C)CALCULAR F 
+    
+    
+   
+   % Inicialização de U0 e k
+   u = u_inicial;          %2.A)U(0) inicializado (u tem dimensão 2*Nu x 1)  
+   k = 1;           % 2.B) Iteração inicial 
+   
+   %2.C)Cálculo de F 
+   F = G.' * G; % 2Nux2Nt X 2Ntx2Nu  = 2Nux2Nu
+
+
+
+   %%PASSO 3: Definição de A) Tau e B) z(0) 
+
+   %Cálculo de |cmax|: máximo valor da parte real ou imaginária dos símbolos QAM-4
+   cmax = max(max(abs(real(S))), max(abs(imag(S))));
+
+   %Cálculo de d: espaçamento entre os símbolos da constelação QAM-4
+   d = 2; % Para QAM-4, os símbolos são espaçados por 2 unidades no plano complexo
+  
+   
+   % A) Cálculo de Tau
+   tau = 2 * cmax + d;
+
+   % B) Cálculo de z(0) % Dim 2Nu x 1
+   z_0 = F * u; % Dim 2Nu x 2Nu  X  2Nu x 1 = 2Nu x 1
+
+
+
+   %%PASSO 4: Cálculo de nsymb
+   nsymb =  2*nusers;    % nsymb = 2 * nu = 8
+
+   u_atualiza = zeros(nsymb,Limite_Interacaoes); % Inicializa u_atuliza
+   u_atualizado = u_inicial;
+   z = zeros(nsymb,Limite_Interacaoes); % Inicializa z
+   lambda = zeros(nsymb,  Limite_Interacaoes + 1); % Inicializa lambda.
+   sign_z = zeros(nsymb,Limite_Interacaoes); % Inicializa sign_z 
+   Delta_q_opt = zeros(nsymb, Limite_Interacaoes + 1); % Inicializa Delta_q_opt(i, k)
+   
+   
+   % PASSO 5: Iteração sobre os índices dos símbolos
+   for k= 1:Limite_Interacaoes
+
+   for i = 1:nsymb
+   
+    % Atualiza de z(i, k) para cada iteração
+        if k == 1
+             z(i,k) =  z(i,k) + z_0(i,1);   % Inicialização no z0
+        end
+       
+   % PASSO 6: Cálculo de lambda_i^(k)
+     
+   sign_z(i,k) = sign(z(i,k));
+
+   
+   
+   rounded_value = abs(z(i,k)) / (tau * F(i,i)); % Retirado o arendondamento
+   
+    disp(['i = ', num2str(i), ', k = ', num2str(k), ', rounded_value : ', num2str(rounded_value),', snr = ', num2str(snr_values(snr_idx))]);
+   
+   lambda(i,k) = -sign_z(i,k) * rounded_value;
+   disp(['i = ', num2str(i), ', k = ', num2str(k), ', lambda_i^(k): ', num2str(lambda(i,k))]);
+
+
+       
+   % PASSO 7: Verificação de |lambda_i^(k)| > s_max
+   if abs(lambda(i,k)) > S_max
+        lambda(i,k) = 0;
+        disp(['i = ', num2str(i), ', k = ', num2str(k), ', lambda_i^(k) excede S_max. Novo valor: ', num2str(lambda(i,k))]);
+   end
+    
+   % PASSO 8: Cálculo de Delta_q_i,opt^(k+1)
+    
+   Delta_q_opt(i,k+1) = lambda(i,k)^2 * tau^2 * F(i,i) + 2 * lambda(i,k) * tau * z(i,k);
+   disp(['i = ', num2str(i), ', k = ', num2str(k), ...
+   ', Delta_q_i,opt^(i,k+1): ', num2str(Delta_q_opt(i,k+1))]);
+
+
+   disp(['Fim da iteração i = ', num2str(i), ' no k = ', num2str(k)]);
+
+
+   end % PASSO 9: Finalizar o Loop do i
+
+   %PASSO 10:
+
+   disp(['Delta_q_opt antes de localizar o minino: ', num2str(Delta_q_opt(:, k+1).')]);
+
+
+   % PASSO 10: Calcular Delta_q_min
+   Delta_q_min = min(Delta_q_opt(:, k+1)); % Mínimo ao longo de i (coluna k+1)
+   disp(['Iteração k = ', num2str(k), ...
+   ', Delta_q_min: ', num2str(Delta_q_min)]);
+
+
+   disp(['Delta_q_opt antes do min: ', num2str(Delta_q_opt(:, k+1).')]);
+
+
+   % PASSO 11: Verificação da condição Delta_q_min >= 0
+   if Delta_q_min >= 0
+        disp(['Delta_q_min >= 0 na iteração k = ', num2str(k), '. Encerrando Loop de k @@@@@@']);
+        break; % Interrompe o loop de K
+   end
+
+  % PASSO 12: Encontra o índice j que minimiza Delta_q_i,opt^(k+1)
+  [Delta_q_min_value, indice ] = min(Delta_q_opt(:, k+1)); % Valor mínimo e índice j
+  disp(['Iteração k = ', num2str(k), ...
+  ', Índice j = ', num2str(indice), ...
+  ', Delta_q_min_value: ', num2str(Delta_q_min_value)]);
+
+
+  
+   % PASSO 13: Atualizar u^(k+1)
+   e_j = zeros(nsymb, 1); %  Inicializa e_j
+   e_j(indice) = 1;            % Posição j é 1, o restante é zero
+
+   % Atualização de u 
+   u_atualiza(:,k+1) = u_atualiza(:,k) + tau * lambda( indice, k) * e_j;
+   u_atualizado(:,k+1) = u_atualizado(:,k) + tau * lambda( indice, k) * e_j;
+   disp(['Iteração k = ', num2str(k), ', Atualizando com o valor: ', num2str(u_atualiza(:, k+1).')]);
+   disp(['Iteração k = ', num2str(k), ', Assim tendo u^(k+1): ', num2str(u_atualizado(:, k+1).')]);        
+  
+   % PASSO 14: Atualização de z^(k+1)
+   f_j = F(:,  indice); % j-ésima coluna de F (direção f_j)
+
+   % Atualização do vetor z
+   z(:, k+1) = z(:, k) + tau * lambda(indice, k) * f_j;
+
+   disp(['Iteração k = ', num2str(k), ', Atualizando z^(k+1): ', num2str(z(:, k).')]);
+   disp(['FIM DO LOOP k:  ',num2str(k) ])
+
+
+
+end    %PASSO 15 E 16 END PRE-CODING
+
+%u Final
+        
+
+  %% RECEPÇÃO
+    %Precisa saber quais são os bits que 
+   
+  
+    %Detection  at  the  receiver
+   
+    u_final = u_atualizado(:,k+1); % u_inicial + tau*P_til_otim = u_final
+   
+    n_til = norm(G*(u_final))*n;
+   
+    y_til = u_final  + n_til;
+  
+    u_estimado = y_til  - tau* floor( (y_til + tau/ 2) / tau);
+       
+   
+    constellation = [1+1j, 1-1j, -1+1j, -1-1j]; % Símbolos possíveis
+
+    bit_mapping = [0 0; 0 1; 1 0; 1 1]; % Mapeamento de bits para os símbolos
+
+
+    % construir u_estimado na forma complexa
+    u_complexo = u_estimado(1:nusers) + 1j * u_estimado(nusers+1:end); % Recompõe os números complexos
+    
+    % Normalizar para encontrar o ponto mais próximo na constelação
+    a = qamdemod(u_complexo, modOrd);
+    u_estimado_normalizado = qammod(qamdemod(u_complexo, modOrd), modOrd) / sqrt(2);
+     
+    % Demodular u_estimado_normalizado para índices da constelação
+    symbol_indices = qamdemod(u_estimado_normalizado * sqrt(2), 4, 'OutputType', 'integer', 'UnitAveragePower', true);
+
+    % Calcula os bits estimados a partir dos índices
+    Msg_estimado = bit_mapping(symbol_indices + 1, :); % "+1" para ajustar índice MATLAB
+    % Compara Msg com Msg_estimado
+    num_erros = sum(Msg(:) ~= Msg_estimado(:)); % Número de bits diferentes
+    total_bits = numel(Msg); % Número total de bits
+    ber_values(snr_idx) = num_erros / total_bits; % Taxa de erro de bits
+
+    % Exibir resultados
+    disp('Bits transmitidos (Msg):');
+    disp(Msg);
+    disp('Bits estimados:');
+    disp(Msg_estimado);
+    disp(['Taxa de erro de bits (BER): ', num2str(ber_values(snr_idx))]);
+    
+    
+        
+    
+       
+  
+ 
+end
+
+%Plotar curva BER x SNR
+    figure;
+    semilogy(snr_values, ber_values, '-o');
+    xlabel('SNR (dB)');
+    ylabel('BER');
+    title('Curva BER x SNR');
+    grid on;
+
+% figure;
+% semilogy(snr_values, ber_values, '-o', 'LineWidth', 2, 'MarkerSize', 8);
+% xlabel('SNR (dB)', 'FontSize', 12);
+% ylabel('BER', 'FontSize', 12);
+% title('Curva BER x SNR', 'FontSize', 14);
+% grid on;
+% axis([min(snr_values) max(snr_values) 1e-6 1]); % Ajuste dos limites do gráfico
+% set(gca, 'YScale', 'log'); % Garantia de que o eixo Y esteja em escala logarítmica
+% 
+
+
+
+
+
+
+
