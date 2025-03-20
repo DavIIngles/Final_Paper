@@ -1,0 +1,90 @@
+
+
+clc;
+close all;
+clear all;
+
+% Valores de nt/nr para testar
+nt_nr_values = [8, 16, 32, 64, 128, 256];
+
+% Gerar gráficos para cada valor
+for i = 1:length(nt_nr_values)
+    nt_nr = nt_nr_values(i);
+    plot_mimo(nt_nr, nt_nr);
+end
+
+% Função para plotar a magnitude da matriz |H^H * H|
+function plot_mimo(nt, nr)
+    % Gerar canal MIMO aleatório (matriz de canal H)
+    H = (randn(nr, nt) + 1i * randn(nr, nt));
+
+    % Calcular a transposta conjugada de H (H^H)
+    H_hermitian = H';
+
+    % Multiplicar H^H por H (matriz Hermitiana)
+    H_product = H_hermitian * H;
+
+    % Gerar uma malha 3D para plotar os resultados
+    [X, Y] = meshgrid(1:nt, 1:nr);
+
+    % Plotar a magnitude do resultado da multiplicação em 3D
+    figure;
+    surf(X, Y, abs(H_product));
+
+    % Configurações do gráfico
+    title(sprintf('Matriz |H^H * H| com %d antenas transmissoras e %d antenas receptoras', nt, nr));
+    xlabel('Índice de Transmissão');
+    ylabel('Índice de Recepção');
+    zlabel('Magnitude');
+    grid on;
+    colormap jet; % Escolher colormap para visualização
+    colorbar; % Mostrar barra de cores
+end
+
+
+
+#########################################################################
+
+
+
+clc;
+close all;
+clear all;
+
+% Valores de nt/nr para testar (removi 128 e 256)
+nt_nr_values = [8, 32,64, 128 ];
+
+% Criar uma figura para os plots 3D
+figure;
+
+% Gerar gráficos para cada valor e posicionar em 2x2
+for i = 1:length(nt_nr_values)
+    nt_nr = nt_nr_values(i);             
+    
+    % Gerar canal MIMO aleatório (matriz de canal H)
+    H = (randn(nt_nr, nt_nr) + 1i * randn(nt_nr, nt_nr));
+
+    % Calcular a transposta conjugada de H (H^H)
+    H_hermitian = H';
+
+    % Multiplicar H^H por H (matriz Hermitiana)
+    H_product = H_hermitian * H;
+
+    % Gerar uma malha 3D para plotar os resultados
+    [X, Y] = meshgrid(1:nt_nr, 1:nt_nr);
+
+    % Subplot 2x2, criar um gráfico para cada valor
+    subplot(2, 2, i); % Configuração da grid 2x2
+    surf(X, Y, abs(H_product));
+    
+    % Configurações do gráfico
+    title(sprintf('Matriz |H^H * H| com %d Antenas', nt_nr));
+    xlabel('Índice de Transmissão');
+    ylabel('Índice de Recepção');
+    zlabel('Magnitude');
+    grid on;
+    colormap jet; % Escolher colormap para visualização
+    colorbar; % Mostrar barra de cores
+end
+
+
